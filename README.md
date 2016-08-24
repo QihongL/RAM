@@ -14,7 +14,7 @@ The `ram_recur.py` implements the RAM. For the 60 X 60 translated MNIST,  it can
 
 To run the code, simply type `python ram_recur.py` (say, in the terminal). It should works if the directory structure is correctly specified. 
 
-If you found any error in the code, please let us know. 
+If you found any error in the code, please let us know. Thanks! 
 
 ## Prerequisites
 
