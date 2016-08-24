@@ -16,6 +16,13 @@ To run the code, simply type `python ram_recur.py` (say, in the terminal). It sh
 
 If you found any error in the code, please let us know. 
 
+## Prerequisites
+
+Python 2.7 or Python 3.3+
+Tensorflow
+NumPy
+Matplotlib
+
 
 ## References: 
 
