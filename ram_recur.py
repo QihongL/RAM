@@ -5,31 +5,52 @@ import numpy as np
 import time
 import random
 import sys
+import os
+
 try:
     xrange
 except NameError:
     xrange = range
 
 dataset = tf_mnist_loader.read_data_sets("mnist_data")
-save_dir = "save-3scales/"
+save_dir = "chckPts/"
 save_prefix = "save"
+summaryFolderName = "summary/"
+
+
+if len(sys.argv) == 2:
+    simulationName = str(sys.argv[1])
+    print "Simulation name = " + simulationName
+    summaryFolderName = summaryFolderName + simulationName + "/"
+    saveImgs = True
+    imgsFolderName = "imgs/" + simulationName + "/"
+    if os.path.isdir(summaryFolderName) == False:
+        os.mkdir(summaryFolderName)
+    # if os.path.isdir(imgsFolderName) == False:
+    #     os.mkdir(imgsFolderName)
+else:
+    saveImgs = False
+    print "Testing... image files will not be saved."
+
+
 start_step = 0
 #load_path = None
 load_path = save_dir + save_prefix + str(start_step) + ".ckpt"
 # to enable visualization, set draw to True
 eval_only = False
-animate = 0
 draw = 0
+animate = 0
 
 # conditions
-translateMnist = 0
-eyeCentered = 1
+translateMnist = 1
+eyeCentered = 0
 
 # about translation
 MNIST_SIZE = 28
 translated_img_size = 60             # side length of the picture
 
 if translateMnist:
+    print "TRANSLATED MNIST"
     img_size = translated_img_size
     depth = 3  # number of zooms
     sensorBandwidth = 12
@@ -42,13 +63,14 @@ if translateMnist:
     batch_size = 20
 
 else:
+    print "CENTERED MNIST"
     img_size = MNIST_SIZE
     depth = 1  # number of zooms
     sensorBandwidth = 8
     minRadius = 4  # zooms -> minRadius * 2**<depth_level>
 
-    initLr = 3e-3
-    lrDecayRate = .995
+    initLr = 5e-3
+    lrDecayRate = .99
     lrDecayFreq = 200
     momentumValue = .9
     batch_size = 20
@@ -72,7 +94,7 @@ n_classes = 10              # card(Y)
 
 # training parameters
 max_iters = 1000000
-SMALL_NUM = 1e-9
+SMALL_NUM = 1e-10
 
 # resource prellocation
 mean_locs = []              # expectation of locations
@@ -144,8 +166,8 @@ def get_glimpse(loc):
     # the hidden units that integrates the location & the glimpses
     glimpseFeature1 = tf.nn.relu(tf.matmul(act_glimpse_hidden, Wg_hg_gf1) + tf.matmul(act_loc_hidden, Wg_hl_gf1) + Bg_hlhg_gf1)
     # return g
-    glimpseFeature2 = tf.matmul(glimpseFeature1, Wg_gf1_gf2) + Bg_gf1_gf2
-    return glimpseFeature2
+    # glimpseFeature2 = tf.matmul(glimpseFeature1, Wg_gf1_gf2) + Bg_gf1_gf2
+    return glimpseFeature1
 
 
 def get_next_input(output):
@@ -156,7 +178,7 @@ def get_next_input(output):
     if eyeCentered:
         # add the last sampled glimpse location
         # TODO max(-1, min(1, u + N(output, sigma) + prevLoc))
-        mean_loc = tf.tanh(tf.matmul(output, Wl_h_l) + Bl_h_l + sampled_locs[-1])
+        mean_loc = tf.tanh(tf.matmul(output, Wl_h_l)  + sampled_locs[-1])
     else:
         # mean_loc = tf.matmul(output, Wl_h_l) + Bl_h_l
         mean_loc = tf.matmul(output, Wl_h_l)
@@ -166,12 +188,11 @@ def get_next_input(output):
 
     # add noise
     # sample_loc = tf.tanh(mean_loc + tf.random_normal(mean_loc.get_shape(), 0, loc_sd))
-    sample_loc = tf.maximum(-1.0,tf.minimum(1.0, mean_loc + tf.random_normal(mean_loc.get_shape(), 0, loc_sd)))
+    sample_loc = tf.maximum(-1.0, tf.minimum(1.0, mean_loc + tf.random_normal(mean_loc.get_shape(), 0, loc_sd)))
 
     # don't propagate throught the locations
     sample_loc = tf.stop_gradient(sample_loc)
     sampled_locs.append(sample_loc)
-
 
     return get_glimpse(sample_loc)
 
@@ -283,7 +304,7 @@ def calc_reward(outputs):
     optimizer = tf.train.MomentumOptimizer(lr, momentumValue)
     train_op = optimizer.minimize(cost, global_step)
 
-    return cost, reward, max_p_y, correct_y, train_op, b, tf.reduce_mean(b), tf.reduce_mean(R - b), p_loc_orig, p_loc, lr
+    return cost, reward, max_p_y, correct_y, train_op, b, tf.reduce_mean(b), tf.reduce_mean(R - b), lr
 
 
 def evaluate():
@@ -345,6 +366,23 @@ def variable_summaries(var, name):
         tf.histogram_summary(name, var)
 
 
+def plotWholeImg(img, img_size, sampled_locs_fetched):
+    plt.imshow(np.reshape(img, [img_size, img_size]),
+               cmap=plt.get_cmap('gray'), interpolation="nearest")
+
+    plt.ylim((img_size - 1, 0))
+    plt.xlim((0, img_size - 1))
+
+    # transform the coordinate to mnist map
+    sampled_locs_mnist_fetched = toMnistCoordinates(sampled_locs_fetched)
+    # visualize the trace of successive nGlimpses (note that x and y coordinates are "flipped")
+    plt.plot(sampled_locs_mnist_fetched[0, :, 1], sampled_locs_mnist_fetched[0, :, 0], '-o',
+             color='lawngreen')
+    plt.plot(sampled_locs_mnist_fetched[0, -1, 1], sampled_locs_mnist_fetched[0, -1, 0], 'o',
+             color='red')
+
+
+
 with tf.Graph().as_default():
 
     # set the learning rate
@@ -373,8 +411,8 @@ with tf.Graph().as_default():
     Wg_hl_gf1 = weight_variable((hl_size, g_size), "glimpseNet_wts_hiddenLocation_glimpseFeature1", True)
     Bg_hlhg_gf1 = weight_variable((1,g_size), "glimpseNet_bias_hGlimpse_hLocs_glimpseFeature1", True)
 
-    Wg_gf1_gf2 = weight_variable((g_size, g_size), "glimpseNet_wts_glimpseFeature1_glimpsedFeature2", True)
-    Bg_gf1_gf2 = weight_variable((1,g_size), "glimpseNet_bias_hidden_glimpsedFeature2", True)
+    # Wg_gf1_gf2 = weight_variable((g_size, g_size), "glimpseNet_wts_glimpseFeature1_glimpsedFeature2", True)
+    # Bg_gf1_gf2 = weight_variable((1,g_size), "glimpseNet_bias_hidden_glimpsedFeature2", True)
 
     Wc_g_h = weight_variable((cell_size, g_size), "coreNet_wts_glimpse_hidden", True)
     Bc_g_h = weight_variable((1,g_size), "coreNet_bias_glimpse_hidden", True)
@@ -383,7 +421,7 @@ with tf.Graph().as_default():
     Bb_h_b = weight_variable((1,1), "baselineNet_bias_hiddenState_baseline", True)
 
     Wl_h_l = weight_variable((cell_out_size, 2), "locationNet_wts_hidden_location", True)
-    Bl_h_l = weight_variable((1,2),  "locationNet_bias_hidden_location", True)
+    # Bl_h_l = weight_variable((1,2),  "locationNet_bias_hidden_location", True)
 
     Wa_h_a = weight_variable((cell_out_size, n_classes), "actionNet_wts_hidden_action", True)
     Ba_h_a = weight_variable((1,n_classes),  "actionNet_bias_hidden_action", True)
@@ -401,7 +439,7 @@ with tf.Graph().as_default():
     glimpse_images = tf.concat(0, glimpse_images)
 
     # compute the reward
-    cost, reward, predicted_labels, correct_labels, train_op, b, avg_b, rminusb, p_loc_orig, p_loc, lr = calc_reward(outputs)
+    cost, reward, predicted_labels, correct_labels, train_op, b, avg_b, rminusb, lr = calc_reward(outputs)
 
     # tensorboard visualization for the parameters
     variable_summaries(Wg_l_h, "glimpseNet_wts_location_hidden")
@@ -411,8 +449,8 @@ with tf.Graph().as_default():
     variable_summaries(Wg_hg_gf1, "glimpseNet_wts_hiddenGlimpse_glimpseFeature1")
     variable_summaries(Wg_hl_gf1, "glimpseNet_wts_hiddenLocation_glimpseFeature1")
     variable_summaries(Bg_hlhg_gf1, "glimpseNet_bias_hGlimpse_hLocs_glimpseFeature1")
-    variable_summaries(Wg_gf1_gf2, "glimpseNet_wts_glimpseFeature1_glimpsedFeature2")
-    variable_summaries(Bg_gf1_gf2, "glimpseNet_bias_glimpseFeature1_glimpsedFeature2")
+    # variable_summaries(Wg_gf1_gf2, "glimpseNet_wts_glimpseFeature1_glimpsedFeature2")
+    # variable_summaries(Bg_gf1_gf2, "glimpseNet_bias_glimpseFeature1_glimpsedFeature2")
 
     variable_summaries(Wc_g_h, "coreNet_wts_glimpse_hidden")
     variable_summaries(Bc_g_h, "coreNet_bias_glimpse_hidden")
@@ -421,7 +459,7 @@ with tf.Graph().as_default():
     variable_summaries(Bb_h_b, "baselineNet_bias_hiddenState_baseline")
 
     variable_summaries(Wl_h_l, "locationNet_wts_hidden_location")
-    variable_summaries(Bl_h_l, "locationNet_bias_hidden_location")
+    # variable_summaries(Bl_h_l, "locationNet_bias_hidden_location")
 
     variable_summaries(Wa_h_a, 'actionNet_wts_hidden_action')
     variable_summaries(Ba_h_a, 'actionNet_bias_hidden_action')
@@ -445,7 +483,7 @@ with tf.Graph().as_default():
     if eval_only:
         evaluate()
     else:
-        summary_writer = tf.train.SummaryWriter("summary", graph=sess.graph)
+        summary_writer = tf.train.SummaryWriter(summaryFolderName, graph=sess.graph)
 
         if draw:
             fig = plt.figure()
@@ -456,7 +494,7 @@ with tf.Graph().as_default():
             plotImgs = []
 
         # training
-        for step in xrange(start_step + 1, max_iters):
+        for epoch in xrange(start_step + 1, max_iters):
             start_time = time.time()
 
             # get the next batch of examples
@@ -466,14 +504,13 @@ with tf.Graph().as_default():
 
             feed_dict = {inputs_placeholder: nextX, labels_placeholder: nextY, \
                          onehot_labels_placeholder: dense_to_one_hot(nextY), b_placeholder: b_fetched}
-            fetches = [train_op, cost, reward, predicted_labels, correct_labels, glimpse_images, b, avg_b, rminusb, \
-                       p_loc_orig, p_loc, mean_locs, sampled_locs, outputs[-1], lr]
+            fetches = [train_op, cost, reward, predicted_labels, correct_labels, glimpse_images, avg_b, rminusb, \
+                       mean_locs, sampled_locs, lr]
             # feed them to the model
             results = sess.run(fetches, feed_dict=feed_dict)
 
-            _, cost_fetched, reward_fetched, prediction_labels_fetched, correct_labels_fetched, f_glimpse_images_fetched, \
-            b_fetched, avg_b_fetched, rminusb_fetched, p_loc_orig_fetched, p_loc_fetched, mean_locs_fetched, sampled_locs_fetched, \
-            output_fetched, lr_fetched = results
+            _, cost_fetched, reward_fetched, prediction_labels_fetched, correct_labels_fetched, glimpse_images_fetched, \
+            avg_b_fetched, rminusb_fetched, mean_locs_fetched, sampled_locs_fetched, lr_fetched = results
 
 
             # compute the distance (glimpsedLocation, targetCenter) over glimpses (for all images in the batch)
@@ -483,19 +520,24 @@ with tf.Graph().as_default():
             #     sampled_locs_cur = np.reshape(sampled_locs_fetched[k,:,:], [nGlimpses,2])
             #     distance[:,k] = np.sqrt(np.sum(np.square(np.subtract(sampled_locs_cur, img_coord_cur)), axis=0))
 
-
             # sys.exit('STOP')
 
 
             duration = time.time() - start_time
-            if step % 20 == 0:
-                if step % 1000 == 0:
-                    # saver.save(sess, save_dir + save_prefix + str(step) + ".ckpt")
-                    if step % 5000 == 0:
-                        evaluate()
+            if epoch % 20 == 0:
+                print('Step %d: cost = %.5f reward = %.5f (%.3f sec) b = %.5f R-b = %.5f, LR = %.5f'
+                      % (epoch, cost_fetched, reward_fetched, duration, avg_b_fetched, rminusb_fetched, lr_fetched))
+                summary_str = sess.run(summary_op, feed_dict=feed_dict)
+                summary_writer.add_summary(summary_str, epoch)
+                # if saveImgs:
+                #     plt.savefig(imgsFolderName + simulationName + '_ep%.6d.png' % (epoch))
+
+                if epoch % 10000 == 0:
+                    saver.save(sess, save_dir + save_prefix + str(epoch) + ".ckpt")
+                    evaluate()
 
                 ##### DRAW WINDOW ################
-                f_glimpse_images = np.reshape(f_glimpse_images_fetched, \
+                f_glimpse_images = np.reshape(glimpse_images_fetched, \
                                               (nGlimpses, batch_size, depth, sensorBandwidth, sensorBandwidth))
 
                 if draw:
@@ -505,29 +547,15 @@ with tf.Graph().as_default():
                             fillList = True
 
                         # display the first image in the in mini-batch
-                        # display the entire image
                         nCols = depth+1
-                        whole = plt.subplot2grid((depth, nCols), (0, 1), rowspan=depth, colspan=depth)
-                        whole = plt.imshow(np.reshape(nextX[0, :], [img_size, img_size]),
-                                           cmap=plt.get_cmap('gray'), interpolation="nearest")
-                        # plt.ylim((0, img_size-1))
-                        # plt.xlim((0, img_size-1))
-
-                        whole.autoscale()
-
-                        # transform the coordinate to mnist map
-                        sampled_locs_mnist_fetched = toMnistCoordinates(sampled_locs_fetched)
-                        # visualize the trace of successive nGlimpses (note that x and y coordinates are "flipped")
-                        plt.plot(sampled_locs_mnist_fetched[0, :, 1], sampled_locs_mnist_fetched[0, :, 0], '-o',
-                                 color='lawngreen')
-                        plt.plot(sampled_locs_mnist_fetched[0, -1, 1], sampled_locs_mnist_fetched[0, -1, 0], 'o',
-                                 color='red')
-                        fig.canvas.draw()
+                        plt.subplot2grid((depth, nCols), (0, 1), rowspan=depth, colspan=depth)
+                        # display the entire image
+                        plotWholeImg(nextX[0, :], img_size, sampled_locs_fetched)
 
                         # display the glimpses
                         for y in xrange(nGlimpses):
-                            txt.set_text('FINAL PREDICTION: %i\nTRUTH: %i\nSTEP: %i/%i'
-                                         % (prediction_labels_fetched[0], correct_labels_fetched[0], (y + 1), nGlimpses))
+                            txt.set_text('Epoch: %.6d \nPrediction: %i -- Truth: %i\nStep: %i/%i'
+                                         % (epoch, prediction_labels_fetched[0], correct_labels_fetched[0], (y + 1), nGlimpses))
 
                             for x in xrange(depth):
                                 plt.subplot(depth, nCols, 1 + nCols * x)
@@ -541,9 +569,10 @@ with tf.Graph().as_default():
                                     plotImgs[x].autoscale()
                             fillList = False
 
-                            fig.canvas.draw()
+                            # fig.canvas.draw()
                             time.sleep(0.1)
-                            plt.pause(0.0001)
+                            plt.pause(0.00005)
+
                     else:
                         txt.set_text('PREDICTION: %i\nTRUTH: %i' % (prediction_labels_fetched[0], correct_labels_fetched[0]))
                         for x in xrange(depth):
@@ -554,13 +583,5 @@ with tf.Graph().as_default():
                         plt.draw()
                         time.sleep(0.05)
                         plt.pause(0.0001)
-
-                ################################
-
-                print('Step %d: cost = %.5f reward = %.5f (%.3f sec) b = %.5f R-b = %.5f, LR = %.5f'
-                      % (step, cost_fetched, reward_fetched, duration, avg_b_fetched, rminusb_fetched, lr_fetched))
-
-                summary_str = sess.run(summary_op, feed_dict=feed_dict)
-                summary_writer.add_summary(summary_str, step)
 
     sess.close()
