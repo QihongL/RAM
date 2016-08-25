@@ -45,6 +45,10 @@ animate = 0
 translateMnist = 1
 eyeCentered = 0
 
+preTraining = 1
+preTraining_epoch = 20000
+drawReconsturction = 1
+
 # about translation
 MNIST_SIZE = 28
 translated_img_size = 60             # side length of the picture
@@ -307,6 +311,20 @@ def calc_reward(outputs):
     return cost, reward, max_p_y, correct_y, train_op, b, tf.reduce_mean(b), tf.reduce_mean(R - b), lr
 
 
+def preTrain(outputs):
+    lr_r = 5e-3
+    # consider the action at the last time step
+    outputs = outputs[-1] # look at ONLY THE END of the sequence
+    outputs = tf.reshape(outputs, (batch_size, cell_out_size))
+    # if preTraining:
+    reconstruction = tf.sigmoid(tf.matmul(outputs, Wr_h_r) + Br_h_r)
+    reconstructionCost = tf.reduce_mean(tf.square(inputs_placeholder - reconstruction))
+
+    train_op_r = tf.train.GradientDescentOptimizer(lr_r).minimize(reconstructionCost)
+    return reconstructionCost, reconstruction, train_op_r
+
+
+
 def evaluate():
     data = dataset.test
     batches_in_epoch = len(data._images) // batch_size
@@ -394,7 +412,6 @@ with tf.Graph().as_default():
     labels_placeholder = tf.placeholder(tf.float32, shape=(batch_size), name="labels_raw")
     onehot_labels_placeholder = tf.placeholder(tf.float32, shape=(batch_size, 10), name="labels_onehot")
     inputs_placeholder = tf.placeholder(tf.float32, shape=(batch_size, img_size * img_size), name="images")
-    b_placeholder = tf.placeholder(tf.float32, shape=(batch_size, (nGlimpses)*2), name="baseline")
 
     # declare the model parameters, here're naming rule:
     # the 1st captical letter: weights or bias (W = weights, B = bias)
@@ -411,11 +428,11 @@ with tf.Graph().as_default():
     Wg_hl_gf1 = weight_variable((hl_size, g_size), "glimpseNet_wts_hiddenLocation_glimpseFeature1", True)
     Bg_hlhg_gf1 = weight_variable((1,g_size), "glimpseNet_bias_hGlimpse_hLocs_glimpseFeature1", True)
 
-    # Wg_gf1_gf2 = weight_variable((g_size, g_size), "glimpseNet_wts_glimpseFeature1_glimpsedFeature2", True)
-    # Bg_gf1_gf2 = weight_variable((1,g_size), "glimpseNet_bias_hidden_glimpsedFeature2", True)
-
     Wc_g_h = weight_variable((cell_size, g_size), "coreNet_wts_glimpse_hidden", True)
     Bc_g_h = weight_variable((1,g_size), "coreNet_bias_glimpse_hidden", True)
+
+    Wr_h_r = weight_variable((cell_out_size, img_size**2), "reconstructionNet_wts_hidden_action", True)
+    Br_h_r = weight_variable((1, img_size**2), "reconstructionNet_bias_hidden_action", True)
 
     Wb_h_b = weight_variable((g_size, 1), "baselineNet_wts_hiddenState_baseline", True)
     Bb_h_b = weight_variable((1,1), "baselineNet_bias_hiddenState_baseline", True)
@@ -438,7 +455,10 @@ with tf.Graph().as_default():
     mean_locs = tf.transpose(mean_locs, [1, 0, 2])
     glimpse_images = tf.concat(0, glimpse_images)
 
+
+
     # compute the reward
+    reconstructionCost, reconstruction, train_op_r = preTrain(outputs)
     cost, reward, predicted_labels, correct_labels, train_op, b, avg_b, rminusb, lr = calc_reward(outputs)
 
     # tensorboard visualization for the parameters
@@ -485,13 +505,57 @@ with tf.Graph().as_default():
     else:
         summary_writer = tf.train.SummaryWriter(summaryFolderName, graph=sess.graph)
 
-        if draw:
-            fig = plt.figure()
+        if drawReconsturction:
+            fig = plt.figure(2)
             txt = fig.suptitle("-", fontsize=36, fontweight='bold')
             plt.ion()
             plt.show()
             plt.subplots_adjust(top=0.7)
             plotImgs = []
+
+
+        if draw:
+            fig = plt.figure(1)
+            txt = fig.suptitle("-", fontsize=36, fontweight='bold')
+            plt.ion()
+            plt.show()
+            plt.subplots_adjust(top=0.7)
+            plotImgs = []
+
+
+        if preTraining:
+            for epoch_r in xrange(1,preTraining_epoch):
+                nextX, nextY = dataset.train.next_batch(batch_size)
+                nextX_orig = nextX
+                if translateMnist:
+                    nextX, nextX_coord = convertTranslated(nextX, MNIST_SIZE, img_size)
+
+                feed_dict_r = {inputs_placeholder: nextX, labels_placeholder: nextY, \
+                                   onehot_labels_placeholder: dense_to_one_hot(nextY)}
+
+                fetches_r = [reconstructionCost, reconstruction, train_op_r]
+
+                reconstructionCost_fetched, reconstruction_fetched, _ = sess.run(fetches_r, feed_dict=feed_dict_r)
+
+
+                if epoch_r % 20 == 0:
+                    print('Step %d: reconstructionCost = %.5f' % (epoch_r, reconstructionCost_fetched))
+                    if epoch_r % 100 == 0:
+                        if drawReconsturction:
+                            plt.subplot(1, 2, 1)
+                            plt.imshow(np.reshape(nextX[0, :], [img_size, img_size]),
+                                       cmap=plt.get_cmap('gray'), interpolation="nearest")
+                            plt.ylim((img_size - 1, 0))
+                            plt.xlim((0, img_size - 1))
+
+                            plt.subplot(1, 2, 2)
+                            plt.imshow(np.reshape(reconstruction_fetched[0, :], [img_size, img_size]),
+                                       cmap=plt.get_cmap('gray'), interpolation="nearest")
+                            plt.ylim((img_size - 1, 0))
+                            plt.xlim((0, img_size - 1))
+                            txt.set_text('Epoch: %.6d \n Cost: %i' % (epoch_r, reconstructionCost_fetched))
+                            plt.show()
+
 
         # training
         for epoch in xrange(start_step + 1, max_iters):
@@ -499,11 +563,13 @@ with tf.Graph().as_default():
 
             # get the next batch of examples
             nextX, nextY = dataset.train.next_batch(batch_size)
+            nextX_orig = nextX
             if translateMnist:
                 nextX, nextX_coord = convertTranslated(nextX, MNIST_SIZE, img_size)
 
             feed_dict = {inputs_placeholder: nextX, labels_placeholder: nextY, \
-                         onehot_labels_placeholder: dense_to_one_hot(nextY), b_placeholder: b_fetched}
+                         onehot_labels_placeholder: dense_to_one_hot(nextY)}
+
             fetches = [train_op, cost, reward, predicted_labels, correct_labels, glimpse_images, avg_b, rminusb, \
                        mean_locs, sampled_locs, lr]
             # feed them to the model
@@ -513,17 +579,8 @@ with tf.Graph().as_default():
             avg_b_fetched, rminusb_fetched, mean_locs_fetched, sampled_locs_fetched, lr_fetched = results
 
 
-            # compute the distance (glimpsedLocation, targetCenter) over glimpses (for all images in the batch)
-            # distance = np.zeros(nGlimpses, batch_size)
-            # for k in range(batch_size):
-            #     img_coord_cur = np.reshape(nextX_coord[k,:], [1,2])
-            #     sampled_locs_cur = np.reshape(sampled_locs_fetched[k,:,:], [nGlimpses,2])
-            #     distance[:,k] = np.sqrt(np.sum(np.square(np.subtract(sampled_locs_cur, img_coord_cur)), axis=0))
-
-            # sys.exit('STOP')
-
-
             duration = time.time() - start_time
+
             if epoch % 20 == 0:
                 print('Step %d: cost = %.5f reward = %.5f (%.3f sec) b = %.5f R-b = %.5f, LR = %.5f'
                       % (epoch, cost_fetched, reward_fetched, duration, avg_b_fetched, rminusb_fetched, lr_fetched))
