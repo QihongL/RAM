@@ -485,6 +485,7 @@ with tf.Graph().as_default():
     variable_summaries(Ba_h_a, 'actionNet_bias_hidden_action')
 
     # tensorboard visualization for the performance metrics
+    tf.scalar_summary("reconstructionCost", reconstructionCost)
     tf.scalar_summary("reward", reward)
     tf.scalar_summary("cost", cost)
     tf.scalar_summary("mean(b)", avg_b)
@@ -510,8 +511,6 @@ with tf.Graph().as_default():
             txt = fig.suptitle("-", fontsize=36, fontweight='bold')
             plt.ion()
             plt.show()
-            plt.subplots_adjust(top=0.7)
-            plotImgs = []
 
 
         if draw:
@@ -535,13 +534,15 @@ with tf.Graph().as_default():
 
                 fetches_r = [reconstructionCost, reconstruction, train_op_r]
 
-                reconstructionCost_fetched, reconstruction_fetched, _ = sess.run(fetches_r, feed_dict=feed_dict_r)
+                reconstructionCost_fetched, reconstruction_fetched, train_op_r_fetched = sess.run(fetches_r, feed_dict=feed_dict_r)
 
 
                 if epoch_r % 20 == 0:
                     print('Step %d: reconstructionCost = %.5f' % (epoch_r, reconstructionCost_fetched))
                     if epoch_r % 100 == 0:
                         if drawReconsturction:
+                            fig = plt.figure(2)
+
                             plt.subplot(1, 2, 1)
                             plt.imshow(np.reshape(nextX[0, :], [img_size, img_size]),
                                        cmap=plt.get_cmap('gray'), interpolation="nearest")
@@ -553,8 +554,9 @@ with tf.Graph().as_default():
                                        cmap=plt.get_cmap('gray'), interpolation="nearest")
                             plt.ylim((img_size - 1, 0))
                             plt.xlim((0, img_size - 1))
-                            txt.set_text('Epoch: %.6d \n Cost: %i' % (epoch_r, reconstructionCost_fetched))
-                            plt.show()
+                            plt.draw()
+                            plt.pause(0.0001)
+                            # plt.show()
 
 
         # training
