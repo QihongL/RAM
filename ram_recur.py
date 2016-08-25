@@ -312,7 +312,7 @@ def calc_reward(outputs):
 
 
 def preTrain(outputs):
-    lr_r = 5e-3
+    lr_r = 1e-3
     # consider the action at the last time step
     outputs = outputs[-1] # look at ONLY THE END of the sequence
     outputs = tf.reshape(outputs, (batch_size, cell_out_size))
@@ -320,7 +320,7 @@ def preTrain(outputs):
     reconstruction = tf.sigmoid(tf.matmul(outputs, Wr_h_r) + Br_h_r)
     reconstructionCost = tf.reduce_mean(tf.square(inputs_placeholder - reconstruction))
 
-    train_op_r = tf.train.GradientDescentOptimizer(lr_r).minimize(reconstructionCost)
+    train_op_r = tf.train.RMSPropOptimizer(lr_r).minimize(reconstructionCost)
     return reconstructionCost, reconstruction, train_op_r
 
 
@@ -438,7 +438,6 @@ with tf.Graph().as_default():
     Bb_h_b = weight_variable((1,1), "baselineNet_bias_hiddenState_baseline", True)
 
     Wl_h_l = weight_variable((cell_out_size, 2), "locationNet_wts_hidden_location", True)
-    # Bl_h_l = weight_variable((1,2),  "locationNet_bias_hidden_location", True)
 
     Wa_h_a = weight_variable((cell_out_size, n_classes), "actionNet_wts_hidden_action", True)
     Ba_h_a = weight_variable((1,n_classes),  "actionNet_bias_hidden_action", True)
@@ -469,8 +468,6 @@ with tf.Graph().as_default():
     variable_summaries(Wg_hg_gf1, "glimpseNet_wts_hiddenGlimpse_glimpseFeature1")
     variable_summaries(Wg_hl_gf1, "glimpseNet_wts_hiddenLocation_glimpseFeature1")
     variable_summaries(Bg_hlhg_gf1, "glimpseNet_bias_hGlimpse_hLocs_glimpseFeature1")
-    # variable_summaries(Wg_gf1_gf2, "glimpseNet_wts_glimpseFeature1_glimpsedFeature2")
-    # variable_summaries(Bg_gf1_gf2, "glimpseNet_bias_glimpseFeature1_glimpsedFeature2")
 
     variable_summaries(Wc_g_h, "coreNet_wts_glimpse_hidden")
     variable_summaries(Bc_g_h, "coreNet_bias_glimpse_hidden")
@@ -479,7 +476,6 @@ with tf.Graph().as_default():
     variable_summaries(Bb_h_b, "baselineNet_bias_hiddenState_baseline")
 
     variable_summaries(Wl_h_l, "locationNet_wts_hidden_location")
-    # variable_summaries(Bl_h_l, "locationNet_bias_hidden_location")
 
     variable_summaries(Wa_h_a, 'actionNet_wts_hidden_action')
     variable_summaries(Ba_h_a, 'actionNet_bias_hidden_action')
@@ -506,12 +502,6 @@ with tf.Graph().as_default():
     else:
         summary_writer = tf.train.SummaryWriter(summaryFolderName, graph=sess.graph)
 
-        if drawReconsturction:
-            fig = plt.figure(2)
-            txt = fig.suptitle("-", fontsize=36, fontweight='bold')
-            plt.ion()
-            plt.show()
-
 
         if draw:
             fig = plt.figure(1)
@@ -521,20 +511,29 @@ with tf.Graph().as_default():
             plt.subplots_adjust(top=0.7)
             plotImgs = []
 
+        if drawReconsturction:
+            fig = plt.figure(2)
+            txt = fig.suptitle("-", fontsize=36, fontweight='bold')
+            plt.ion()
+            plt.show()
 
         if preTraining:
             for epoch_r in xrange(1,preTraining_epoch):
-                nextX, nextY = dataset.train.next_batch(batch_size)
+                nextX, _ = dataset.train.next_batch(batch_size)
                 nextX_orig = nextX
                 if translateMnist:
-                    nextX, nextX_coord = convertTranslated(nextX, MNIST_SIZE, img_size)
-
-                feed_dict_r = {inputs_placeholder: nextX, labels_placeholder: nextY, \
-                                   onehot_labels_placeholder: dense_to_one_hot(nextY)}
+                    nextX, _ = convertTranslated(nextX, MNIST_SIZE, img_size)
 
                 fetches_r = [reconstructionCost, reconstruction, train_op_r]
 
-                reconstructionCost_fetched, reconstruction_fetched, train_op_r_fetched = sess.run(fetches_r, feed_dict=feed_dict_r)
+                # print np.shape(nextX_orig)
+                # print np.shape(nextX)
+                # print type(nextX)
+                # sys.exit('STOP')
+
+                reconstructionCost_fetched, reconstruction_fetched, train_op_r_fetched = sess.run(fetches_r,feed_dict={inputs_placeholder: nextX})
+                # reconstructionCost_fetched = sess.run(reconstructionCost, feed_dict={inputs_placeholder: nextX})
+
 
 
                 if epoch_r % 20 == 0:
