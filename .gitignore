@@ -1,8 +1,7 @@
 *.ckpt
 *.SUNet
 *.meta
-
-/summary
+*.SUNet
 /save-3scales
 
 ram_test.py
