@@ -1,4 +1,4 @@
-# A tensorflow implementation of the recurrent attention model (RAM)
+# A tensorflow implementation of the recurrent attention model
 
 
 ## Intro to RAM
