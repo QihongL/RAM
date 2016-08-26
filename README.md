@@ -9,7 +9,9 @@ This is an implementation of the RAM (recurrent attention model) model [1], and 
 
 ## Run the RAM
 
-To run the code, simply type `python ram_recur.py` (say, in the terminal). The **model parameters** are described [here] (https://github.com/QihongL/RAM/wiki/Parameter-description) in our RAM wiki page. It should run if the directory structure is correctly specified.
+To run the code, simply type `python ram_recur.py` (say, in the terminal). The **model parameters** are described [here] (https://github.com/QihongL/RAM/wiki/Parameter-description) in our RAM wiki page. 
+
+It should run if the directory structure is correctly specified. For example, there should be two folders called "summary" and "chckPts" in the project directory.  
 
 
 ## Some results
