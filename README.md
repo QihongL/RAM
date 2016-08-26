@@ -1,4 +1,4 @@
-# Welcome to the RAM wiki! 
+# A tensorflow implementation of the recurrent attention model (RAM) by Volodymyr Mnih [1]
 
 
 ## Intro to RAM
