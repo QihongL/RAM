@@ -1,9 +1,11 @@
-# A tensorflow implementation of the recurrent attention model (RAM) by Volodymyr Mnih [1]
+# A tensorflow implementation of the recurrent attention model (RAM)
 
 
 ## Intro to RAM
 
 This is an implementation of the RAM (recurrent attention model) model [1], and it is a debugged version of [2]. Instead of using all pixels of the image, this model extracts a local glimpse of the entire image at each time step, and integrate information over time to form a complete representation. Once the model learned where to look, it is more robust against the influence of translation than standard ConvNet, demonstrated by [1].
+
+For a more detailed description, please refer to the repo [wiki page] (https://github.com/QihongL/RAM/wiki)
 
 ## Run the RAM
 
