@@ -103,6 +103,10 @@ SMALL_NUM = 1e-10
 # resource prellocation
 mean_locs = []              # expectation of locations
 sampled_locs = []           # sampled locations ~N(mean_locs[.], loc_sd)
+mean_locs_stopGrad = []
+sampled_locs_stopGrad = []
+
+
 baselines = []              # baseline, the value prediction
 glimpse_images = []         # to show in window
 
@@ -186,16 +190,18 @@ def get_next_input(output):
     else:
         mean_loc = tf.matmul(output, Wl_h_l)
 
-    mean_loc = tf.stop_gradient(mean_loc)
+    # mean_loc = tf.stop_gradient(mean_loc)
     mean_locs.append(mean_loc)
+    mean_locs_stopGrad.append(tf.stop_gradient(mean_loc))
 
     # add noise
     # sample_loc = tf.tanh(mean_loc + tf.random_normal(mean_loc.get_shape(), 0, loc_sd))
     sample_loc = tf.maximum(-1.0, tf.minimum(1.0, mean_loc + tf.random_normal(mean_loc.get_shape(), 0, loc_sd)))
 
     # don't propagate throught the locations
-    sample_loc = tf.stop_gradient(sample_loc)
+    # sample_loc = tf.stop_gradient(sample_loc)
     sampled_locs.append(sample_loc)
+    sampled_locs_stopGrad.append(tf.stop_gradient(sample_loc))
 
     return get_glimpse(sample_loc)
 
@@ -214,8 +220,11 @@ def model():
     # initialize the location under unif[-1,1], for all example in the batch
     initial_loc = tf.random_uniform((batch_size, 2), minval=-1, maxval=1)
     mean_locs.append(initial_loc)
+    mean_locs_stopGrad.append(tf.stop_gradient(initial_loc))
+
     initial_loc = tf.tanh(initial_loc + tf.random_normal(initial_loc.get_shape(), 0, loc_sd))
     sampled_locs.append(initial_loc)
+    sampled_locs_stopGrad.append(tf.stop_gradient(initial_loc))
 
     # get the input using the input network
     initial_glimpse = get_glimpse(initial_loc)
@@ -291,9 +300,9 @@ def calc_reward(outputs):
     R = tf.tile(R, [1, (nGlimpses)*2])
 
     # get the location
-    p_loc = gaussian_pdf(mean_locs, sampled_locs)
+    p_loc = gaussian_pdf(mean_locs_stopGrad, sampled_locs_stopGrad)
     p_loc = tf.tanh(p_loc)
-    p_loc_orig = p_loc
+    # p_loc_orig = p_loc
     p_loc = tf.reshape(p_loc, (batch_size, (nGlimpses) * 2))
 
     # define the cost function
@@ -315,12 +324,16 @@ def preTrain(outputs):
     # consider the action at the last time step
     outputs = outputs[-1] # look at ONLY THE END of the sequence
     outputs = tf.reshape(outputs, (batch_size, cell_out_size))
-    # if preTraining:
+
+    # get the location
+    p_loc_r = gaussian_pdf(mean_locs_stopGrad, sampled_locs_stopGrad)
+    p_loc_r = tf.tanh(p_loc_r)
+
     reconstruction = tf.sigmoid(tf.matmul(outputs, Wr_h_r) + Br_h_r)
-    reconstructionCost = tf.reduce_mean(tf.square(inputs_placeholder - reconstruction))
+    reconstructionCost = tf.reduce_mean(tf.square(inputs_placeholder - reconstruction)) * tf.log(p_loc_r + SMALL_NUM)
 
     train_op_r = tf.train.RMSPropOptimizer(lr_r).minimize(reconstructionCost)
-    return reconstructionCost, reconstruction, train_op_r
+    return tf.reduce_mean(reconstructionCost), reconstruction, train_op_r
 
 
 
@@ -448,9 +461,19 @@ with tf.Graph().as_default():
     sampled_locs = tf.concat(0, sampled_locs)
     sampled_locs = tf.reshape(sampled_locs, (nGlimpses, batch_size, 2))
     sampled_locs = tf.transpose(sampled_locs, [1, 0, 2])
+
     mean_locs = tf.concat(0, mean_locs)
     mean_locs = tf.reshape(mean_locs, (nGlimpses, batch_size, 2))
     mean_locs = tf.transpose(mean_locs, [1, 0, 2])
+
+    sampled_locs_stopGrad = tf.concat(0, sampled_locs_stopGrad)
+    sampled_locs_stopGrad = tf.reshape(sampled_locs_stopGrad, (nGlimpses, batch_size, 2))
+    sampled_locs_stopGrad = tf.transpose(sampled_locs_stopGrad, [1, 0, 2])
+
+    mean_locs_stopGrad = tf.concat(0, mean_locs_stopGrad)
+    mean_locs_stopGrad = tf.reshape(mean_locs_stopGrad, (nGlimpses, batch_size, 2))
+    mean_locs_stopGrad = tf.transpose(mean_locs_stopGrad, [1, 0, 2])
+
     glimpse_images = tf.concat(0, glimpse_images)
 
 
