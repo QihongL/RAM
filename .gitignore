@@ -2,12 +2,17 @@
 *.SUNet
 *.meta
 *.SUNet
+*.DS_Store
+*.local
+*.zip
+
+
+/summary
 /save-3scales
+/chckPts
 
 ram_test.py
 lrSchedule.py
 testing.py
-
-*.zip
-
 lrSchedule.py
+
